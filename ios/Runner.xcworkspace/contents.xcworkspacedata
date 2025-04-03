@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <Group
+      location = "group:MyTool"
+      name = "MyTool">
+      <FileRef
+         location = "group:Package.swift">
+      </FileRef>
+      <Group
+         location = "group:Sources"
+         name = "Sources">
+         <FileRef
+            location = "group:MyTool.swift">
+         </FileRef>
+      </Group>
+   </Group>
+   <Group
+      location = "group:MyLibrary"
+      name = "MyLibrary">
+      <Group
+         location = "group:Tests"
+         name = "Tests">
+         <Group
+            location = "group:MyLibraryTests"
+            name = "MyLibraryTests">
+            <FileRef
+               location = "group:MyLibraryTests.swift">
+            </FileRef>
+         </Group>
+      </Group>
+      <FileRef
+         location = "group:Package.swift">
+      </FileRef>
+      <Group
+         location = "group:Sources"
+         name = "Sources">
+         <Group
+            location = "group:MyLibrary"
+            name = "MyLibrary">
+            <FileRef
+               location = "group:MyLibrary.swift">
+            </FileRef>
+         </Group>
+      </Group>
+   </Group>
+   <FileRef
+      location = "group:Runner.xcodeproj">
+   </FileRef>
+</Workspace>

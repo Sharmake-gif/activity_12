@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_options.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // It initialized Firebase before running the app
+  await Firebase.initializeApp();
   runApp(InventoryApp());
 }
 
@@ -14,7 +14,9 @@ class InventoryApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Inventory Management App',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
       home: InventoryHomePage(title: 'Inventory Home Page'),
     );
   }
@@ -29,99 +31,59 @@ class InventoryHomePage extends StatefulWidget {
 }
 
 class _InventoryHomePageState extends State<InventoryHomePage> {
-  final CollectionReference itemsRef = FirebaseFirestore.instance.collection(
-    'items',
-  );
-
-  void _showItemDialog({String? id, Map<String, dynamic>? data}) {
-    final TextEditingController nameController = TextEditingController(
-      text: data?['name'] ?? '',
-    );
-    final TextEditingController qtyController = TextEditingController(
-      text: data?['quantity']?.toString() ?? '',
-    );
-
-    showDialog(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: Text(id != null ? 'Update Item' : 'Add Item'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(labelText: 'Item Name'),
-                ),
-                TextField(
-                  controller: qtyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(labelText: 'Quantity'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                child: Text(id != null ? 'Update' : 'Add'),
-                onPressed: () {
-                  final name = nameController.text.trim();
-                  final qty = int.tryParse(qtyController.text.trim()) ?? 0;
-                  final item = {'name': name, 'quantity': qty};
-
-                  if (id != null) {
-                    itemsRef.doc(id).update(item);
-                  } else {
-                    itemsRef.add(item);
-                  }
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _deleteItem(String id) {
-    itemsRef.doc(id).delete();
-  }
+  // Reference to the Firestore collection
+  final CollectionReference itemsCollection =
+      FirebaseFirestore.instance.collection('items');
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+      ),
+      // Use a StreamBuilder for real-time updates from Firestore
       body: StreamBuilder<QuerySnapshot>(
-        stream: itemsRef.snapshots(),
+        stream: itemsCollection.snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
-            return Center(child: Text('Error loading data'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
-
-          final docs = snapshot.data!.docs;
-
+          }
+          final List<DocumentSnapshot> documents = snapshot.data!.docs;
           return ListView.builder(
-            itemCount: docs.length,
-            itemBuilder: (_, index) {
-              final item = docs[index];
-              final data = item.data() as Map<String, dynamic>;
-
+            itemCount: documents.length,
+            itemBuilder: (context, index) {
+              var item = documents[index];
               return ListTile(
-                title: Text(data['name']),
-                subtitle: Text('Quantity: ${data['quantity']}'),
+                title: Text(item['name'] ?? 'No Name'),
+                subtitle: Text(item['description'] ?? ''),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Edit button navigates to the EditItemScreen
                     IconButton(
                       icon: Icon(Icons.edit),
-                      onPressed: () => _showItemDialog(id: item.id, data: data),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditItemScreen(
+                              itemId: item.id,
+                              currentName: item['name'],
+                              currentDescription: item['description'],
+                            ),
+                          ),
+                        );
+                      },
                     ),
+                    // Delete button removes the item from Firestore
                     IconButton(
                       icon: Icon(Icons.delete),
-                      onPressed: () => _deleteItem(item.id),
+                      onPressed: () async {
+                        await itemsCollection.doc(item.id).delete();
+                      },
                     ),
                   ],
                 ),
@@ -130,10 +92,158 @@ class _InventoryHomePageState extends State<InventoryHomePage> {
           );
         },
       ),
+      // Floating button navigates to the AddItemScreen
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showItemDialog(),
+        onPressed: () {
+          Navigator.push(
+              context, MaterialPageRoute(builder: (context) => AddItemScreen()));
+        },
+        tooltip: 'Add Item',
         child: Icon(Icons.add),
-        tooltip: 'Add Inventory Item',
       ),
     );
   }
+}
+
+class AddItemScreen extends StatefulWidget {
+  @override
+  _AddItemScreenState createState() => _AddItemScreenState();
+}
+
+class _AddItemScreenState extends State<AddItemScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+
+  // Reference to the Firestore collection
+  final CollectionReference itemsCollection =
+      FirebaseFirestore.instance.collection('items');
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Add Inventory Item'),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              // Field for item name
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(labelText: 'Item Name'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter item name' : null,
+              ),
+              // Field for item description
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(labelText: 'Description'),
+              ),
+              SizedBox(height: 20),
+              // Button to add the item to Firestore
+              ElevatedButton(
+                child: Text('Add Item'),
+                onPressed: () async {
+                  if (_formKey.currentState!.validate()) {
+                    await itemsCollection.add({
+                      'name': _nameController.text,
+                      'description': _descriptionController.text,
+                      'created_at': FieldValue.serverTimestamp(),
+                    });
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class EditItemScreen extends StatefulWidget {
+  final String itemId;
+  final String currentName;
+  final String currentDescription;
+
+  EditItemScreen({
+    required this.itemId,
+    required this.currentName,
+    required this.currentDescription,
+  });
+
+  @override
+  _EditItemScreenState createState() => _EditItemScreenState();
+}
+
+class _EditItemScreenState extends State<EditItemScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+
+  final CollectionReference itemsCollection =
+      FirebaseFirestore.instance.collection('items');
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.currentName);
+    _descriptionController =
+        TextEditingController(text: widget.currentDescription);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Edit Inventory Item'),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(labelText: 'Item Name'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter item name' : null,
+              ),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(labelText: 'Description'),
+              ),
+              SizedBox(height: 20),
+              // This button is to update the item in Firestore
+              ElevatedButton(
+                child: Text('Update Item'),
+                onPressed: () async {
+                  if (_formKey.currentState!.validate()) {
+                    await itemsCollection.doc(widget.itemId).update({
+                      'name': _nameController.text,
+                      'description': _descriptionController.text,
+                      'updated_at': FieldValue.serverTimestamp(),
+                    });
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  
